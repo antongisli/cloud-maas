@@ -1,0 +1,35 @@
+#cloud-config
+write_files:
+- content: |
+    #!/bin/bash
+    REMOTE=$1
+    if [ -z "$REMOTE" ]
+    then 
+      echo "No remote IP provided, exiting"
+      exit 1
+    fi
+    sudo tailscale up
+    export TAILSCALE_ADDRESS=$(ip a s tailscale0 | egrep -o 'inet [0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}' | cut -d' ' -f2)
+    sudo ip link add vxlan100 type vxlan id 100 local $TAILSCALE_ADDRESS remote $REMOTE
+    sudo ip link set vxlan100 up
+    sudo brctl addbr br100
+    sudo brctl addif br100 vxlan100
+    sudo brctl stp br100 off
+    sudo ip link set br100 up
+  path: /home/ubuntu/finish_install.sh
+  permissions: '0755'
+  owner: ubuntu:ubuntu
+packages:
+- jq
+- bridge-utils
+snap:
+  commands:
+    - snap install maas
+    - snap install maas-test-db
+runcmd:
+- export IP_ADDRESS=$(ip -j route show default | jq -r '.[].prefsrc')
+- maas init region+rack --database-uri maas-test-db:/// --maas-url http://${IP_ADDRESS}:5240/MAAS
+- maas createadmin --username admin --password admin --email admin
+- curl -fsSL https://tailscale.com/install.sh | sh
+
+
